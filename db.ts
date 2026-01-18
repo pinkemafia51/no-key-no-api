@@ -3,9 +3,26 @@ import { AppState, Role, Client } from './types';
 import { INITIAL_SERVICES, INITIAL_EMPLOYEES, INITIAL_PRODUCTS, DEFAULT_BUSINESS_HOURS } from './constants';
 
 // --- הגדרות קובץ הנתונים ---
-// המפתחות נטענים כעת מקובץ ה-.env לאבטחה מוגברת
-const CLOUD_FILE_URL = process.env.JSONBIN_URL || ''; 
-const CLOUD_API_KEY = process.env.JSONBIN_API_KEY || ''; 
+// מנסה לטעון משתני סביבה, ואם לא קיים - משתמש בערכים המוטמעים כגיבוי
+const getEnvVar = (key: string, fallback: string): string => {
+  try {
+    // בדיקה בטוחה עבור סביבות שונות (Node, Vite, וכו')
+    if (typeof process !== 'undefined' && process.env && process.env[key]) {
+      return process.env[key] as string;
+    }
+    // @ts-ignore
+    if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env[key]) {
+      // @ts-ignore
+      return import.meta.env[key] as string;
+    }
+  } catch (e) {
+    // התעלמות משגיאות גישה למשתני סביבה
+  }
+  return fallback;
+};
+
+const CLOUD_FILE_URL = getEnvVar('JSONBIN_URL', 'https://api.jsonbin.io/v3/b/6969f86fd0ea881f406f8404');
+const CLOUD_API_KEY = getEnvVar('JSONBIN_API_KEY', '$2a$10$l3wvlupcd0Mf9cAdjlxQsOLkB1lL3b7IDjvag7jVb5oizEgSeVhcG');
 
 const LOCAL_KEY = 'beauty_hub_data';
 
@@ -36,12 +53,17 @@ const INITIAL_DB_STATE: AppState = {
 export const readDataFile = async (): Promise<AppState> => {
   if (CLOUD_FILE_URL) {
     try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json'
+      };
+      // שימוש רק במפתח מאסטר כדי למנוע שגיאות הרשאה/CORS
+      if (CLOUD_API_KEY) {
+        headers['X-Master-Key'] = CLOUD_API_KEY;
+      }
+
       const response = await fetch(CLOUD_FILE_URL, {
         method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(CLOUD_API_KEY ? { 'X-Master-Key': CLOUD_API_KEY, 'X-Access-Key': CLOUD_API_KEY } : {})
-        }
+        headers
       });
       
       if (response.ok) {
@@ -64,6 +86,8 @@ export const readDataFile = async (): Promise<AppState> => {
         // עדכון גיבוי מקומי
         localStorage.setItem(LOCAL_KEY, JSON.stringify(validData));
         return validData;
+      } else {
+        console.warn('Cloud read returned status:', response.status);
       }
     } catch (e) {
       console.error('Failed to read from cloud, using local backup', e);
@@ -84,7 +108,7 @@ export const readDataFile = async (): Promise<AppState> => {
 export const writeDataFile = async (state: AppState): Promise<void> => {
   localStorage.setItem(LOCAL_KEY, JSON.stringify(state));
 
-  if (CLOUD_FILE_URL) {
+  if (CLOUD_FILE_URL && CLOUD_API_KEY) {
     // מנקים מידע מקומי שלא אמור להיות משותף
     const stateToSave = { 
       ...state, 
@@ -97,7 +121,7 @@ export const writeDataFile = async (state: AppState): Promise<void> => {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          ...(CLOUD_API_KEY ? { 'X-Master-Key': CLOUD_API_KEY, 'X-Access-Key': CLOUD_API_KEY } : {}),
+          'X-Master-Key': CLOUD_API_KEY,
           'X-Bin-Versioning': 'false'
         },
         body: JSON.stringify(stateToSave)
