@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Role, AppState, Client, Appointment, Service, Employee, AppNotification } from './types';
 import { readDataFile, writeDataFile, loadDatabase } from './db';
@@ -95,30 +96,39 @@ const App: React.FC = () => {
   };
 
   const registerClient = async (newClient: Client) => {
-    const currentCloudData = await readDataFile();
-    
-    if (currentCloudData.clients.some(c => c.phone === newClient.phone)) {
-        alert('המשתמש כבר קיים במערכת!');
-        return;
-    }
+    try {
+        // קריאה מהענן כדי לוודא שאין כפילויות ושאנחנו עובדים עם המידע העדכני ביותר
+        const currentCloudData = await readDataFile();
+        
+        if (currentCloudData.clients.some(c => c.phone === newClient.phone)) {
+            alert('המשתמש כבר קיים במערכת!');
+            return;
+        }
 
-    const clientWithNotifs = { ...newClient, notifications: [] };
-    
-    const newState = {
-      ...currentCloudData,
-      clients: [...currentCloudData.clients, clientWithNotifs]
-    };
-    
-    // מעדכנים מיד כדי שהמשתמש ירגיש שהמערכת מגיבה
-    setAppState({
-        ...newState,
-        role: Role.CLIENT,
-        currentUser: clientWithNotifs
-    });
-    
-    // ואז שומרים
-    await writeDataFile(newState);
-    setIsLoggedIn(true);
+        const clientWithNotifs = { ...newClient, notifications: [] };
+        
+        // יצירת אובייקט מידע חדש עם הלקוח הנוסף
+        const newState = {
+          ...currentCloudData,
+          clients: [...currentCloudData.clients, clientWithNotifs]
+        };
+        
+        // עדכון ה-State המקומי מיידית לחוויית משתמש מהירה
+        setAppState({
+            ...newState,
+            role: Role.CLIENT,
+            currentUser: clientWithNotifs
+        });
+        
+        // שמירה מפורשת לענן (JSONBin) לוודא שהלקוח נשמר
+        await writeDataFile(newState);
+        console.log('User registered and saved to cloud successfully');
+        
+        setIsLoggedIn(true);
+    } catch (error) {
+        console.error('Failed to register client to cloud:', error);
+        alert('אירעה שגיאה בשמירת ההרשמה בענן. אנא נסי שנית.');
+    }
   };
 
   const addAppointment = (appointment: Appointment) => {
